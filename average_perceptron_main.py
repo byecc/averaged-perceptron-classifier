@@ -1,0 +1,30 @@
+from processdata import *
+from average_perceptron_train import *
+from hyperparameter import *
+
+r = Read_data()
+parameter = Parameter()
+r.process_file('data/raw.clean.train')
+ngram_dict = r.create_ngram_dict('ngram_dict.pkl')
+print(len(ngram_dict))
+# r.create_freq_dict(parameter.threshold,ngram_dict)
+print(len(ngram_dict))
+r_dev = Read_data()
+r_dev.process_file('data/raw.clean.dev')
+r_test = Read_data()
+r_test.process_file('data/raw.clean.test')
+r_devandtest = Read_data()
+r_devandtest.process_file('data/raw.clean.devandtest')
+# print(len(ngram_dict))
+train_encoder = Encode()
+train_encodes = train_encoder.encode(r.result,ngram_dict)
+dev_encodes = train_encoder.encode(r_dev.result,ngram_dict)
+test_encodes = train_encoder.encode(r_test.result,ngram_dict)
+devandtest_encodes = train_encoder.encode(r_devandtest.result,ngram_dict)
+# for e in encodes:
+#     e.show()
+aptrain = APTrain()
+# train_encodes = train.encode_random(train_encodes)
+parameter.depth = len(ngram_dict)
+aptrain.create_weight_matrix(parameter.depth,parameter.class_num)
+aptrain.train(parameter,train_encodes,dev_encodes,test_encodes)
