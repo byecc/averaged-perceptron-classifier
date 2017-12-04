@@ -8,81 +8,73 @@ class APTrain:
     def __init__(self):
         self.weight_matrix = np.array((0,0))
         self.sum_weight_matrix = np.array((0,0))
-        self.sum_bias_matrix = np.array((0,0))
-        self.avg_weight_matrix = np.array((0,0))
-        self.avg_bias_matrix = np.array((0,0))
-        self.bias = np.array((0,0))
         self.last_update_weight = []
-        self.update = 0
+        self.cor = 0
+        self.total = 0
+        self.loss = 0
+        self.step = 0
 
     def create_weight_matrix(self,depth,width):
         self.weight_matrix = np.zeros((depth,width))
         self.sum_weight_matrix = np.zeros((depth,width))
-        self.sum_bias_matrix = np.array([0 for i in range(width)])
-        self.bias = np.array([0 for i in range(width)])
-        self.avg_weight_matrix = np.zeros((depth,width))
-        self.avg_bias_matrix = np.array([0 for i in range(width)])
         self.last_update_weight = [0 for i in range(depth)]
 
     def train(self,parameter,train_encodes,dev_encodes,test_encodes):
-        step = 1
+        self.step = 1
         for i in range(parameter.ap_iter_num):
             print('第%d轮迭代：'%(i+1))
             starttime = time.time()
-            total = cor = loss = left_bound = 0
+            self.total = self.cor = self.loss = left_bound = 0
             right_bound = parameter.ap_batch_size
             max_len = len(train_encodes)
             while left_bound<max_len:    #batch
-                for encode in train_encodes[left_bound:right_bound]:
-                    sum = np.array([0.0 for i in range(parameter.class_num)])
-                    for e in encode.code_list:
-                        sum += self.weight_matrix[e]
-                    if self.get_maxIndex(sum) != self.get_maxIndex(encode.label):
-                        # punish_vec = self.generate_punish_vec(parameter.class_num,-1,0,1,self.get_maxIndex(sum))
-                        for wi in encode.code_list:
-                            times = step - self.last_update_weight[wi]
-                            self.sum_weight_matrix[wi] += self.weight_matrix[wi]*times
-                            self.weight_matrix[wi][self.get_maxIndex(sum)] -= 1
-                            self.weight_matrix[wi][self.get_maxIndex(encode.label)] += 1
-                            # self.weight_matrix[wi] += punish_vec
-                            self.sum_weight_matrix[wi] += self.weight_matrix[wi]
-                        for wi in encode.code_list:
-                            self.last_update_weight[wi] = step
-                        loss += 1
-                    else:
-                        cor+=1
-                    total+=1
-                    step += 1
-                left_bound += parameter.batch_size
-                right_bound += parameter.batch_size
+                outputs,gold_labels = self.forward(train_encodes[left_bound:right_bound],parameter.class_num)
+                self.backward(outputs,gold_labels,train_encodes[left_bound:right_bound])
+                left_bound += parameter.ap_batch_size
+                right_bound += parameter.ap_batch_size
                 if right_bound >= max_len:
                     right_bound = max_len - 1
             for i in range(parameter.depth):
-                times = step - self.last_update_weight[i]
+                times = self.step - self.last_update_weight[i]
                 self.sum_weight_matrix[i] += self.weight_matrix[i] * times
-                self.last_update_weight[i] = step
+                self.last_update_weight[i] = self.step
             print('训练时间：',time.time()-starttime)
-            print('train accuarcy:',cor/total)
-            print('loss:',loss )
+            print('train accuarcy:',self.cor/self.total)
+            print('loss:',self.loss )
             self.eval(dev_encodes, 'dev',parameter)
             # self.eval(test_encodes, 'test')
-            if cor/total == 1.0:
+            if self.cor/self.total == 1.0:
                 break
             train_encodes = self.encode_random(train_encodes)
         print('-------------------------')
 
-    def generate_punish_vec(self,num,punish_num,rand_a,rand_b,punish_index):
-        # if punish_num>rand_a or punish_num>rand_b:
-        #     print('punish_num should be greater than other_num')
-        #     return None
-        # random.seed(33)
-        punish_vec = []
-        for i in range(num):
-            if i == punish_index:
-                punish_vec.append(punish_num)
+    def forward(self,encodes,class_num):
+        result_labels = []
+        gold_labels = []
+        for encode in encodes:
+            sum = np.array([0.0 for i in range(class_num)])
+            for e in encode.code_list:
+                sum += self.weight_matrix[e]
+            result_labels.append(sum)
+            gold_labels.append(encode.label)
+        return result_labels,gold_labels
+
+    def backward(self,outputs,gold_labels,encodes):
+        for i in range(len(outputs)):
+            if self.get_maxIndex(outputs[i]) != self.get_maxIndex(gold_labels[i]):
+                for wi in encodes[i].code_list:
+                    times = self.step - self.last_update_weight[wi]
+                    self.sum_weight_matrix[wi] += self.weight_matrix[wi]*times
+                    self.weight_matrix[wi][self.get_maxIndex(outputs[i])] -= 1
+                    self.weight_matrix[wi][self.get_maxIndex(gold_labels[i])] += 1
+                    self.sum_weight_matrix[wi] += self.weight_matrix[wi]
+                for wi in encodes[i].code_list:
+                    self.last_update_weight[wi] = self.step
+                self.loss += 1
             else:
-                punish_vec.append(random.uniform(rand_a,rand_b))
-        return punish_vec
+                self.cor += 1
+            self.total += 1
+            self.step += 1
 
     def get_max(self,list):
         max = list[0]
@@ -126,6 +118,3 @@ class APTrain:
             encode.label = o_encodes[i].label
             n_encodes.append(encode)
         return n_encodes
-
-    def loss(self,list):
-        return -1*math.log2(max(list))
